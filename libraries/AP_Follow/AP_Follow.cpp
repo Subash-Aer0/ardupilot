@@ -271,10 +271,8 @@ bool AP_Follow::get_target_dist_and_vel_ned(Vector3f &dist_ned, Vector3f &dist_w
     Location current_loc;
     if (!AP::ahrs().get_location(current_loc)) {
         hal.console->printf("Unable to fetch UAV loc\n");
-
-            clear_dist_and_bearing_to_target();
-        _estimate_valid = false;
-        return;
+        clear_dist_and_bearing_to_target();
+         return false;
     }
 
     current_loc.offset(generateGPSNoise(0, _gps_noise));

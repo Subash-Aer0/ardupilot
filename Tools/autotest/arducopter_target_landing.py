@@ -16,9 +16,7 @@ from arducopter import AutoTestCopter
 from Target_Landing.Platform import Platform
 
 testdir = os.path.dirname(os.path.realpath(__file__))
-drone_lat_initial = 12.992006
-drone_lng_initial = 80.236649
-SITL_START_LOCATION = mavutil.location(drone_lat_initial,drone_lng_initial,0,0)
+SITL_START_LOCATION = mavutil.location(12.992006,80.236649,0,0)
 
 class WindSpeed(TypedDict):
     speed: float
@@ -42,7 +40,7 @@ class SeaState(TypedDict):
 
 class AutoTestCopterTargetLanding(AutoTestCopter):
 
-    target_origin = np.zeros((3,))
+    target_origin = np.array([129920050, 802368336, 0])
     target_v0 = np.array([5, 0, 0])
     target_state = np.zeros((6,))
     target_state_noisy = np.zeros((6,))
@@ -89,6 +87,7 @@ class AutoTestCopterTargetLanding(AutoTestCopter):
         }
     ]
 
+    target_log_file_path = os.path.expanduser("~/UAV_Landing/logs/test")
 
     def get_acceleration(self, a, acc_last_update_time, tstart):
         

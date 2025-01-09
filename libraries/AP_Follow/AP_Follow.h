@@ -191,10 +191,25 @@ private:
 
     // write out an onboard-log message to help diagnose follow problems:
     void Log_Write_FOLL();
+    // add noise to copter GPS
+    Vector3p generateGPSNoise(double mean, double stddev);
 
     //==========================================================================
     // Parameters
     //==========================================================================
+
+
+    // parameters
+    AP_Int8     _enabled;           // 1 if this subsystem is enabled
+    AP_Int16    _sysid;             // target's mavlink system id (0 to use first sysid seen)
+    AP_Float    _dist_max;          // maximum distance to target.  targets further than this will be ignored
+    AP_Int8     _offset_type;       // offset frame type (0:North-East-Down, 1:RelativeToLeadVehicleHeading)
+    AP_Vector3f _offset;            // offset from lead vehicle in meters
+    AP_Int8     _yaw_behave;        // following vehicle's yaw/heading behaviour (see YAW_BEHAVE enum)
+    AP_Int8     _alt_type;          // altitude source for follow mode
+    AC_P        _p_pos;             // position error P controller
+    AP_Int16    _options;           // options for mount behaviour follow mode
+    AP_Float    _gps_noise;          // Copter's GPS noise standard deviation
 
     AP_Int8     _enabled;           // 1 = Follow mode is enabled; 0 = disabled
     AP_Int16    _sysid;             // MAVLink system ID of the target (0 = auto-select first sender)

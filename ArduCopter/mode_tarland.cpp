@@ -2,9 +2,12 @@
 
 #if MODE_TARLAND_ENABLED
 
-#define MIN_DESCENT_ALT_OFF 1
-#define MIN_FOLLOW_DIST 5
-#define HOVER_ALT 40
+#define MIN_DESCENT_ALT_OFF 0.5f   // switch to LAND at 0.5 m above target
+#define MIN_FOLLOW_DIST     0.5f   // horizontal error must be <= 0.5 m
+#define HOVER_ALT           40.0f  // normal follow altitude
+#define INTERMEDIATE_ALT    10.0f
+#define INTERMEDIATE_DIST   5.0f
+#define OFFSET_ZERO_ALT     1.0f
 
 /**
  * mode_tarland.cpp - follow another mavlink enabled vehicle and land on it
@@ -28,40 +31,164 @@ bool ModeTarLand::init(bool ignore_checks)
     return ModeGuided::init(ignore_checks);
 }
 
+// void ModeTarLand::run()
+// {   
+//     if(!motors->armed()) {
+//         return;
+//     }
+
+//     get_target_info();
+
+//     if(!has_target_info) {
+//         // Handle case when target location is not available
+//         return;
+//     }
+
+//     float dist_xy = dist_vec_offs.xy().length();
+
+//     if(dist_xy > MIN_FOLLOW_DIST){
+
+//         Vector3f offset = g2.follow.get_offset();
+//         offset.z = -HOVER_ALT;
+//         g2.follow.set_offset(offset, offset_type);  
+        
+//         follow_target();
+
+//     }else if(dist_xy <= MIN_FOLLOW_DIST) {
+
+//             if(dist_vec.z > MIN_DESCENT_ALT_OFF) {
+
+//                 Vector3f offset = g2.follow.get_offset();
+//                 offset.z = -MIN_DESCENT_ALT_OFF;
+//                 g2.follow.set_offset(offset, offset_type);
+                
+//                 follow_target();
+
+            // } else if(dist_vec.z <= MIN_DESCENT_ALT_OFF) {
+
+            //     perform_landing();
+            // }
+
+//     }
+
+// }
 void ModeTarLand::run()
-{   
-    if(!motors->armed()) {
+{
+    if (!motors->armed()) {
         return;
     }
 
     get_target_info();
 
-    if(!has_target_info) {
-        // Handle case when target location is not available
+    if (!has_target_info) {
         return;
     }
 
-    float dist_xy = dist_vec.xy().length();
+    // Actual physical horizontal distance between UAV and target
+    const float actual_dist_xy = dist_vec.xy().length();
 
-    if(dist_xy > MIN_FOLLOW_DIST){
+    // Horizontal distance after applying follow offset
+    const float offset_dist_xy = dist_vec_offs.xy().length();
 
-        g2.follow.set_offset({0,0,-HOVER_ALT}, offset_type);
+    // Debug output
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO,
+                  "ACTUAL XY: %.3f | OFFSET XY: %.3f | Z: %.3f",
+                  actual_dist_xy,
+                  offset_dist_xy,
+                  dist_vec.z);
+
+
+    // =========================================================
+    // PHASE 1
+    //
+    // Horizontal distance > 5 m
+    //
+    // Follow target at normal altitude = 40 m
+    // =========================================================
+    if (actual_dist_xy > INTERMEDIATE_DIST) {
+
+        // Vector3f offset = g2.follow.get_offset();
+        Vector3f offset = {0, 0, -HOVER_ALT};
+
+        g2.follow.set_offset(offset, offset_type);
+
         follow_target();
 
-    }else if(dist_xy <= MIN_FOLLOW_DIST) {
-
-            if(dist_vec.z > MIN_DESCENT_ALT_OFF) {
-
-                g2.follow.set_offset({0,0,-MIN_DESCENT_ALT_OFF}, offset_type);
-                follow_target();
-
-            } else if(dist_vec.z <= MIN_DESCENT_ALT_OFF) {
-
-                perform_landing();
-            }
+        return;
     }
 
+
+    // =========================================================
+    // PHASE 2
+    //
+    // 0.5 m < horizontal distance <= 5 m
+    //
+    // Reduce follow altitude from 40 m to 10 m
+    // while continuing to track the moving target.
+    // =========================================================
+    
+    if (actual_dist_xy > MIN_FOLLOW_DIST) {
+
+        // Vector3f offset = g2.follow.get_offset();
+        Vector3f offset = {0, 0, -INTERMEDIATE_ALT};
+
+        // offset.z = -INTERMEDIATE_ALT;
+
+        g2.follow.set_offset(offset, offset_type);
+
+        follow_target();
+
+        return;
+    }
+
+
+    // =========================================================
+    // PHASE 3
+    //
+    // Horizontal distance <= 0.5 m
+    //
+    // Continue tracking the moving target and descend toward
+    // the offset zero altitude of 1 m.
+    // =========================================================
+    
+    if (dist_vec.z > MIN_DESCENT_ALT_OFF) {
+
+        // Vector3f offset = g2.follow.get_offset();
+        Vector3f offset = {0, 0, -MIN_DESCENT_ALT_OFF};
+
+        // offset.z = -MIN_DESCENT_ALT_OFF;
+
+        g2.follow.set_offset(offset, offset_type);
+
+        follow_target();
+
+        return;
+    }
+
+
+    // =========================================================
+    // PHASE 4
+    //
+    // Horizontal distance <= 0.5 m
+    // Vertical distance <= 0.5 m
+    //
+    // Target is now sufficiently close for landing.
+    //
+    // Switch immediately to normal LAND mode.
+    // =========================================================
+    
+    if (actual_dist_xy <= MIN_FOLLOW_DIST &&
+        dist_vec.z <= MIN_DESCENT_ALT_OFF) {
+        GCS_SEND_TEXT(MAV_SEVERITY_NOTICE,
+                    "LAND CMD PASSED | XY: %.3f m | Z: %.3f m",
+                    actual_dist_xy,
+                    dist_vec.z);
+        set_mode(Mode::Number::LAND, ModeReason::UNKNOWN);
+
+        return;
+    }
 }
+
 
 void ModeTarLand::get_target_info()
 {
@@ -95,39 +222,56 @@ void ModeTarLand::follow_target()
         log_request = true;
         last_log_ms = now;
         Location current_loc;
-        AP::ahrs().get_location(current_loc);
-        hal.console->printf("Mode Tarland");
-        hal.console->printf("Distance to target: %f", dist_vec.xy().length());
-        hal.console->printf("Dist x: %f\n", dist_vec.x);
-        hal.console->printf("Dist y: %f\n", dist_vec.y);
-        hal.console->printf("Dist z: %f\n", dist_vec.z);
+        // AP::ahrs().get_location(current_loc);
+        // hal.console->printf("Mode Tarland");
+        // hal.console->printf("Distance to target: %f", dist_vec.xy().length());
+        // hal.console->printf("Dist x: %f\n", dist_vec.x);
+        // hal.console->printf("Dist y: %f\n", dist_vec.y);
+        // hal.console->printf("Dist z: %f\n", dist_vec.z);
+
+        hal.console->printf("Mode Tarland\n");
+        hal.console->printf(
+            "ACTUAL target: X=%f Y=%f Z=%f Dist=%f\n",
+            dist_vec.x,
+            dist_vec.y,
+            dist_vec.z,
+            dist_vec.xy().length()
+        );
+
+        hal.console->printf(
+            "OFFSET target: X=%f Y=%f Z=%f Dist=%f\n",
+            dist_vec_offs.x,
+            dist_vec_offs.y,
+            dist_vec_offs.z,
+            dist_vec_offs.xy().length()
+        );
         hal.console->printf("Drone z pos: %f \n", current_loc.alt*0.01f);
     }
 
     // re-use guided mode's velocity controller (takes NEU)
     ModeGuided::set_velocity(desired_velocity_neu_cms, yaw_info.use_yaw, yaw_info.yaw_cd, false, 0.0f, false, log_request);
-
+    
     ModeGuided::run();
 }
 
-void ModeTarLand::perform_landing()
-{
-    copter.set_land_complete(true);
-    copter.pos_control->set_vel_desired_NEU_cms({0,0,0});
+// void ModeTarLand::perform_landing()
+// {
+//     copter.set_land_complete(true);
+//     copter.pos_control->set_vel_desired_NEU_cms({0,0,0});
 
-    copter.pos_control->update_NE_controller();
-    copter.pos_control->update_U_controller();
+//     copter.pos_control->update_NE_controller();
+//     copter.pos_control->update_U_controller();
 
-    if (copter.motors->armed()) {
-        motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::GROUND_IDLE);
-        copter.arming.disarm(AP_Arming::Method::LANDED);
-    }
+//     if (copter.motors->armed()) {
+//         motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::GROUND_IDLE);
+//         copter.arming.disarm(AP_Arming::Method::LANDED);
+//     }
 
-    if(!copter.motors->armed()){
-        gcs().send_text(MAV_SEVERITY_INFO, "Ship landing complete. Motors disarmed.");
-        landed = true;
-    }
-}
+//     if(!copter.motors->armed()){
+//         gcs().send_text(MAV_SEVERITY_INFO, "Ship landing complete. Motors disarmed.");
+//         landed = true;
+//     }
+// }
 
 /**
  * Calculates the desired velocity from position error using P controller

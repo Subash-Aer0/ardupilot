@@ -480,6 +480,9 @@ bool AP_Follow::get_target_dist_and_vel_NED_m(Vector3f &dist_ned, Vector3f &dist
     dist_with_offs = ofs_dist_vec.tofloat();
     vel_ned = _ofs_estimate_vel_ned_ms;
 
+    gcs().send_text(MAV_SEVERITY_INFO, "Estimated target pos x=%f, y=%f, z=%f", _estimate_pos_ned_m.x, _estimate_pos_ned_m.y, _estimate_pos_ned_m.z);
+    gcs().send_text(MAV_SEVERITY_INFO, "Current drone pos x=%f, y=%f, z=%f", current_position_ned_m.x, current_position_ned_m.y, current_position_ned_m.z);
+
     return true;
 }
 
@@ -702,6 +705,8 @@ bool AP_Follow::handle_global_position_int_message(const mavlink_message_t &msg)
     Location _target_location;
     _target_location.lat = packet.lat;
     _target_location.lng = packet.lon;
+
+    gcs().send_text(MAV_SEVERITY_INFO, "Target Loc Lat=%d Lng=%d alt=%d rel_alt=%d", packet.lat, packet.lon, packet.alt, packet.relative_alt);
 
     // set target altitude based on configured altitude type
     if (_alt_type == AP_FOLLOW_ALTITUDE_TYPE_RELATIVE) {
@@ -1007,6 +1012,7 @@ bool AP_Follow::have_target(void) const
 
     // check for timeout
     if ((_last_location_update_ms == 0) || (AP_HAL::millis() - _last_location_update_ms > AP_FOLLOW_TIMEOUT_MS)) {
+        gcs().send_text(MAV_SEVERITY_INFO, "No update from target");
         return false;
     }
     return true;
